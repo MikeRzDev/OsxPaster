@@ -8,20 +8,23 @@
 import AppKit
 
 enum PasteMethod: String, CaseIterable {
-    case keyEvents = "keyEvents"
-    case clipboard = "clipboard"
+    case unicode  = "unicode"   // keyboardSetUnicodeString — works in native apps
+    case keyCodes = "keyCodes"  // real US QWERTY key codes — works in web KVMs
+    case clipboard = "clipboard" // writes to pasteboard + sends ⌘V
 
     var label: String {
         switch self {
-        case .keyEvents: return "Key Events"
+        case .unicode:   return "Unicode (default)"
+        case .keyCodes:  return "Key Codes (US QWERTY)"
         case .clipboard: return "Clipboard (⌘V)"
         }
     }
 
     var description: String {
         switch self {
-        case .keyEvents: return "Simulates a keypress per character. Works in most native apps."
-        case .clipboard: return "Writes to clipboard and sends ⌘V. Best for web KVMs and remote desktops."
+        case .unicode:   return "Sends each character as a Unicode key event. Works in most native apps."
+        case .keyCodes:  return "Sends real US QWERTY key codes. Use this for web KVMs and remote desktops."
+        case .clipboard: return "Writes to the clipboard and sends ⌘V. Requires the target app to accept ⌘V."
         }
     }
 }
@@ -47,24 +50,24 @@ enum PasteManager {
             return
         }
         let raw = UserDefaults.standard.string(forKey: "pasteMethod") ?? ""
-        let method = PasteMethod(rawValue: raw) ?? .keyEvents
+        let method = PasteMethod(rawValue: raw) ?? .unicode
         switch method {
-        case .keyEvents: typeString(text)
+        case .unicode:   typeUnicode(text)
+        case .keyCodes:  typeKeyCodes(text)
         case .clipboard: pasteViaClipboard(text)
         }
     }
 
-    // MARK: - Key Events method
+    // MARK: - Unicode method (virtual key 0 + Unicode payload)
 
-    static func typeString(_ text: String) {
+    static func typeUnicode(_ text: String) {
         let source = CGEventSource(stateID: .hidSystemState)
-        // Walk UTF-16 code units; handle surrogate pairs for supplementary Unicode (emoji, etc.)
         let utf16 = Array(text.utf16)
         var i = 0
         while i < utf16.count {
             var chars: [UniChar]
             if utf16[i] >= 0xD800 && utf16[i] <= 0xDBFF && i + 1 < utf16.count {
-                chars = [utf16[i], utf16[i + 1]] // surrogate pair
+                chars = [utf16[i], utf16[i + 1]]
                 i += 2
             } else {
                 chars = [utf16[i]]
@@ -73,10 +76,148 @@ enum PasteManager {
             let down = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true)
             down?.keyboardSetUnicodeString(stringLength: chars.count, unicodeString: &chars)
             down?.post(tap: .cghidEventTap)
-
             let up = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false)
             up?.keyboardSetUnicodeString(stringLength: chars.count, unicodeString: &chars)
             up?.post(tap: .cghidEventTap)
+        }
+    }
+
+    // MARK: - Key Codes method (real US QWERTY mapping)
+
+    static let shiftKeyCode: CGKeyCode = 56 // kVK_Shift
+
+    /// A single event in the keystroke sequence (testable without posting).
+    struct KeyStroke: Equatable {
+        let keyCode: CGKeyCode
+        let keyDown: Bool
+        let flags: CGEventFlags
+        let unicodeChars: [UniChar]?
+
+        static func == (lhs: KeyStroke, rhs: KeyStroke) -> Bool {
+            lhs.keyCode == rhs.keyCode
+            && lhs.keyDown == rhs.keyDown
+            && lhs.flags == rhs.flags
+            && lhs.unicodeChars == rhs.unicodeChars
+        }
+    }
+
+    /// Builds the sequence of keystrokes for `text` without posting any events.
+    static func buildKeyStrokes(for text: String) -> [KeyStroke] {
+        var strokes: [KeyStroke] = []
+        for char in text {
+            if let (keyCode, shift) = keyCodeMap[char] {
+                if shift {
+                    strokes.append(KeyStroke(keyCode: shiftKeyCode, keyDown: true,
+                                             flags: .maskShift, unicodeChars: nil))
+                }
+                let flags: CGEventFlags = shift ? .maskShift : []
+                let chars = Array(char.utf16)
+                strokes.append(KeyStroke(keyCode: keyCode, keyDown: true,
+                                         flags: flags, unicodeChars: chars))
+                strokes.append(KeyStroke(keyCode: keyCode, keyDown: false,
+                                         flags: flags, unicodeChars: chars))
+                if shift {
+                    strokes.append(KeyStroke(keyCode: shiftKeyCode, keyDown: false,
+                                             flags: [], unicodeChars: nil))
+                }
+            } else {
+                let chars = Array(char.utf16)
+                strokes.append(KeyStroke(keyCode: 0, keyDown: true,
+                                         flags: [], unicodeChars: chars))
+                strokes.append(KeyStroke(keyCode: 0, keyDown: false,
+                                         flags: [], unicodeChars: chars))
+            }
+        }
+        return strokes
+    }
+
+    // Maps printable characters to (virtualKeyCode, needsShift) for US QWERTY.
+    static let keyCodeMap: [Character: (CGKeyCode, Bool)] = [
+        // Lowercase letters
+        "a": (0,  false), "s": (1,  false), "d": (2,  false), "f": (3,  false),
+        "h": (4,  false), "g": (5,  false), "z": (6,  false), "x": (7,  false),
+        "c": (8,  false), "v": (9,  false), "b": (11, false), "q": (12, false),
+        "w": (13, false), "e": (14, false), "r": (15, false), "y": (16, false),
+        "t": (17, false), "o": (31, false), "u": (32, false), "i": (34, false),
+        "p": (35, false), "l": (37, false), "j": (38, false), "k": (40, false),
+        "n": (45, false), "m": (46, false),
+        // Uppercase letters
+        "A": (0,  true), "S": (1,  true), "D": (2,  true), "F": (3,  true),
+        "H": (4,  true), "G": (5,  true), "Z": (6,  true), "X": (7,  true),
+        "C": (8,  true), "V": (9,  true), "B": (11, true), "Q": (12, true),
+        "W": (13, true), "E": (14, true), "R": (15, true), "Y": (16, true),
+        "T": (17, true), "O": (31, true), "U": (32, true), "I": (34, true),
+        "P": (35, true), "L": (37, true), "J": (38, true), "K": (40, true),
+        "N": (45, true), "M": (46, true),
+        // Numbers
+        "1": (18, false), "2": (19, false), "3": (20, false), "4": (21, false),
+        "5": (23, false), "6": (22, false), "7": (26, false), "8": (28, false),
+        "9": (25, false), "0": (29, false),
+        // Shift+number symbols
+        "!": (18, true), "@": (19, true), "#": (20, true), "$": (21, true),
+        "%": (23, true), "^": (22, true), "&": (26, true), "*": (28, true),
+        "(": (25, true), ")": (29, true),
+        // Punctuation
+        "-": (27, false), "=": (24, false), "[": (33, false), "]": (30, false),
+        "\\": (42, false), ";": (41, false), "'": (39, false), ",": (43, false),
+        ".": (47, false), "/": (44, false), "`": (50, false),
+        // Shift+punctuation
+        "_": (27, true), "+": (24, true), "{": (33, true), "}": (30, true),
+        "|": (42, true), ":": (41, true), "\"": (39, true), "<": (43, true),
+        ">": (47, true), "?": (44, true), "~": (50, true),
+        // Whitespace
+        " ": (49, false), "\t": (48, false), "\n": (36, false), "\r": (36, false),
+    ]
+
+    static func typeKeyCodes(_ text: String) {
+        let source = CGEventSource(stateID: .hidSystemState)
+
+        for char in text {
+            if let (keyCode, shift) = keyCodeMap[char] {
+                if shift {
+                    let shiftDown = CGEvent(keyboardEventSource: source,
+                                            virtualKey: shiftKeyCode, keyDown: true)
+                    shiftDown?.flags = .maskShift
+                    shiftDown?.post(tap: .cghidEventTap)
+                }
+
+                let flags: CGEventFlags = shift ? .maskShift : []
+                var chars = Array(char.utf16)
+
+                let down = CGEvent(keyboardEventSource: source,
+                                   virtualKey: keyCode, keyDown: true)
+                down?.flags = flags
+                down?.keyboardSetUnicodeString(stringLength: chars.count,
+                                               unicodeString: &chars)
+                down?.post(tap: .cghidEventTap)
+
+                let up = CGEvent(keyboardEventSource: source,
+                                 virtualKey: keyCode, keyDown: false)
+                up?.flags = flags
+                up?.keyboardSetUnicodeString(stringLength: chars.count,
+                                             unicodeString: &chars)
+                up?.post(tap: .cghidEventTap)
+
+                if shift {
+                    let shiftUp = CGEvent(keyboardEventSource: source,
+                                          virtualKey: shiftKeyCode, keyDown: false)
+                    shiftUp?.post(tap: .cghidEventTap)
+                }
+            } else {
+                var chars = Array(char.utf16)
+                let down = CGEvent(keyboardEventSource: source,
+                                   virtualKey: 0, keyDown: true)
+                down?.keyboardSetUnicodeString(stringLength: chars.count,
+                                               unicodeString: &chars)
+                down?.post(tap: .cghidEventTap)
+                let up = CGEvent(keyboardEventSource: source,
+                                 virtualKey: 0, keyDown: false)
+                up?.keyboardSetUnicodeString(stringLength: chars.count,
+                                             unicodeString: &chars)
+                up?.post(tap: .cghidEventTap)
+            }
+
+            usleep(5000) // 5 ms between characters for KVM compatibility
         }
     }
 

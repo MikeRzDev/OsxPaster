@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+
+    <!-- Background: deep indigo → near-black -->
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%"   stop-color="#2D1B69"/>
+      <stop offset="100%" stop-color="#0C0720"/>
+    </linearGradient>
+
+    <!-- Subtle top-left glow -->
+    <radialGradient id="bgGlow" cx="28%" cy="24%" r="55%">
+      <stop offset="0%"   stop-color="#5C4BE8" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#5C4BE8" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Clipboard face gradient (white → very light blue) -->
+    <linearGradient id="clipFace" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#DCE8FF"/>
+    </linearGradient>
+
+    <!-- Badge gradient: teal -->
+    <linearGradient id="badge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%"   stop-color="#00E5B4"/>
+      <stop offset="100%" stop-color="#00A376"/>
+    </linearGradient>
+
+    <!-- Soft drop shadow for clipboard -->
+    <filter id="clipShadow" x="-15%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="18" stdDeviation="26"
+                    flood-color="#000020" flood-opacity="0.55"/>
+    </filter>
+
+    <!-- Glow around badge -->
+    <filter id="badgeGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="0" stdDeviation="18"
+                    flood-color="#00E5B4" flood-opacity="0.7"/>
+    </filter>
+
+  </defs>
+
+  <!-- ── Background ─────────────────────────────────────── -->
+  <rect width="1024" height="1024" rx="225" fill="url(#bg)"/>
+  <rect width="1024" height="1024" rx="225" fill="url(#bgGlow)"/>
+
+  <!-- Very subtle bottom shine -->
+  <ellipse cx="512" cy="980" rx="380" ry="120"
+           fill="white" opacity="0.03"/>
+
+  <!-- ── Back clipboard (depth layer) ──────────────────── -->
+  <g opacity="0.22">
+    <rect x="278" y="334" width="510" height="532" rx="50"
+          fill="white"/>
+    <rect x="398" y="276" width="270" height="108" rx="38"
+          fill="white"/>
+  </g>
+
+  <!-- ── Front clipboard ────────────────────────────────── -->
+  <g filter="url(#clipShadow)">
+
+    <!-- Body -->
+    <rect x="228" y="300" width="530" height="548" rx="52"
+          fill="url(#clipFace)"/>
+
+    <!-- Clip bar -->
+    <rect x="363" y="238" width="298" height="116" rx="40"
+          fill="url(#clipFace)"/>
+
+    <!-- Clip hole -->
+    <ellipse cx="512" cy="253" rx="88" ry="42"
+             fill="url(#bg)"/>
+
+    <!-- Thin separator line below clip -->
+    <rect x="228" y="338" width="530" height="10" rx="0"
+          fill="#0008" opacity="0.06"/>
+  </g>
+
+  <!-- ── Text lines (clipboard content) ────────────────── -->
+  <!-- First row: highlighted item -->
+  <rect x="288" y="415" width="410" height="46" rx="14"
+        fill="#4A6CF7" opacity="0.13"/>
+  <rect x="304" y="428" width="180" height="20" rx="10"
+        fill="#2D1B69" opacity="0.28"/>
+  <rect x="304" y="428" width="180" height="20" rx="10"
+        fill="#4A6CF7" opacity="0.10"/>
+
+  <!-- Remaining rows -->
+  <rect x="304" y="484" width="380" height="20" rx="10"
+        fill="#2D1B69" opacity="0.16"/>
+  <rect x="304" y="524" width="340" height="20" rx="10"
+        fill="#2D1B69" opacity="0.14"/>
+  <rect x="304" y="564" width="290" height="20" rx="10"
+        fill="#2D1B69" opacity="0.12"/>
+  <rect x="304" y="604" width="230" height="20" rx="10"
+        fill="#2D1B69" opacity="0.10"/>
+  <rect x="304" y="644" width="160" height="20" rx="10"
+        fill="#2D1B69" opacity="0.08"/>
+
+  <!-- ── Teal checkmark badge (bottom-right) ───────────── -->
+  <circle cx="662" cy="740" r="112" fill="url(#badge)"
+          filter="url(#badgeGlow)"/>
+
+  <!-- Rim -->
+  <circle cx="662" cy="740" r="112" fill="none"
+          stroke="white" stroke-width="5" opacity="0.25"/>
+
+  <!-- Checkmark (clean, bold, centered) -->
+  <polyline
+    points="612,742 645,775 714,706"
+    fill="none"
+    stroke="white"
+    stroke-width="26"
+    stroke-linecap="round"
+    stroke-linejoin="round"/>
+
+</svg>

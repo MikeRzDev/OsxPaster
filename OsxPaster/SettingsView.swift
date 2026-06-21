@@ -11,7 +11,7 @@ import AppKit
 struct SettingsView: View {
     @AppStorage("pasteDelay") private var pasteDelay: Double = 3.0
     @AppStorage("scanInterval") private var scanInterval: Double = 2.0
-    @AppStorage("pasteMethod") private var pasteMethod: String = PasteMethod.keyEvents.rawValue
+    @AppStorage("pasteMethod") private var pasteMethod: String = PasteMethod.unicode.rawValue
     @State private var accessibilityGranted = PasteManager.isAccessibilityGranted()
 
     var body: some View {
@@ -47,7 +47,7 @@ struct SettingsView: View {
                 }
                 .pickerStyle(.radioGroup)
                 .labelsHidden()
-                Text((PasteMethod(rawValue: pasteMethod) ?? .keyEvents).description)
+                Text((PasteMethod(rawValue: pasteMethod) ?? .unicode).description)
                     .foregroundStyle(.secondary)
                     .font(.caption)
             }
