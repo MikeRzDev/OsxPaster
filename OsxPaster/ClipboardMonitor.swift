@@ -67,9 +67,9 @@ class ClipboardMonitor: ObservableObject {
 
         // Delay of 0 — paste immediately, no countdown
         guard totalSeconds > 0 else {
-            PasteManager.pasteImmediately(text: text)
-            justPasted = true
             pasteTask = Task {
+                await PasteManager.pasteImmediately(text: text)
+                justPasted = true
                 try? await Task.sleep(for: .seconds(1.5))
                 justPasted = false
             }
@@ -84,7 +84,7 @@ class ClipboardMonitor: ObservableObject {
                 pasteCountdown = secondsLeft > 1 ? secondsLeft - 1 : nil
             }
             if Task.isCancelled { return }
-            PasteManager.pasteImmediately(text: text)
+            await PasteManager.pasteImmediately(text: text)
             justPasted = true
             try? await Task.sleep(for: .seconds(1.5))
             justPasted = false

@@ -43,43 +43,85 @@ enum PasteManager {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
     }
 
-    /// Types `text` immediately using the method selected in Settings.
-    static func pasteImmediately(text: String) {
+    /// Types `text` using the method selected in Settings.
+    ///
+    /// The event posting runs on a detached background task: the Key Codes
+    /// method sleeps 5 ms per character, so on the main thread a long paste
+    /// would freeze the menu and UI for seconds. Returns once the whole
+    /// string has been posted.
+    static func pasteImmediately(text: String) async {
         guard isAccessibilityGranted() else {
             requestAccessibility()
             return
         }
         let raw = UserDefaults.standard.string(forKey: "pasteMethod") ?? ""
         let method = PasteMethod(rawValue: raw) ?? .unicode
-        switch method {
-        case .unicode:   typeUnicode(text)
-        case .keyCodes:  typeKeyCodes(text)
-        case .clipboard: pasteViaClipboard(text)
+        await runTypingOffMainThread {
+            switch method {
+            case .unicode:   typeUnicode(text)
+            case .keyCodes:  typeKeyCodes(text)
+            case .clipboard: pasteViaClipboard(text)
+            }
         }
+    }
+
+    /// Runs event-posting `work` on a detached background task at user-initiated
+    /// priority, returning once it finishes. The Key Codes method sleeps 5 ms per
+    /// character, so on the main thread a long paste would freeze the menu and UI
+    /// for the length of the paste. Posting CGEvents is thread-safe, so the work
+    /// is safe to run off the main thread. Exposed (not private) so the
+    /// off-main-thread guarantee can be unit-tested.
+    static func runTypingOffMainThread(_ work: @escaping @Sendable () -> Void) async {
+        await Task.detached(priority: .userInitiated) { work() }.value
     }
 
     // MARK: - Unicode method (virtual key 0 + Unicode payload)
 
-    static func typeUnicode(_ text: String) {
-        let source = CGEventSource(stateID: .hidSystemState)
+    /// Builds the keystroke sequence for `text` using the Unicode method:
+    /// every UTF-16 unit (or surrogate pair) rides a virtual-key-0 event with
+    /// no modifier flags — no physical key codes, no Shift events. Pure and
+    /// side-effect free, so it can be unit-tested the same way `buildKeyStrokes`
+    /// is. `typeUnicode` posts exactly what this returns.
+    static func buildUnicodeStrokes(for text: String) -> [KeyStroke] {
+        var strokes: [KeyStroke] = []
         let utf16 = Array(text.utf16)
         var i = 0
         while i < utf16.count {
-            var chars: [UniChar]
+            let chars: [UniChar]
             if utf16[i] >= 0xD800 && utf16[i] <= 0xDBFF && i + 1 < utf16.count {
+                // High surrogate — keep it with its trailing low surrogate so an
+                // astral-plane scalar (e.g. an emoji) is delivered as one event.
                 chars = [utf16[i], utf16[i + 1]]
                 i += 2
             } else {
                 chars = [utf16[i]]
                 i += 1
             }
-            let down = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true)
-            down?.keyboardSetUnicodeString(stringLength: chars.count, unicodeString: &chars)
-            down?.post(tap: .cghidEventTap)
-            let up = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false)
-            up?.keyboardSetUnicodeString(stringLength: chars.count, unicodeString: &chars)
-            up?.post(tap: .cghidEventTap)
+            strokes.append(KeyStroke(keyCode: 0, keyDown: true,  flags: [], unicodeChars: chars))
+            strokes.append(KeyStroke(keyCode: 0, keyDown: false, flags: [], unicodeChars: chars))
         }
+        return strokes
+    }
+
+    static func typeUnicode(_ text: String) {
+        let source = CGEventSource(stateID: .hidSystemState)
+        for stroke in buildUnicodeStrokes(for: text) {
+            post(stroke, source: source)
+        }
+    }
+
+    /// Posts a single `KeyStroke` as a CGEvent. The one place every paste method
+    /// turns a built stroke into a real event, so all three share identical flag
+    /// and Unicode handling and the `build*Strokes` functions stay the source of
+    /// truth for what gets posted.
+    private static func post(_ stroke: KeyStroke, source: CGEventSource?) {
+        let event = CGEvent(keyboardEventSource: source,
+                            virtualKey: stroke.keyCode, keyDown: stroke.keyDown)
+        event?.flags = stroke.flags
+        if var chars = stroke.unicodeChars {
+            event?.keyboardSetUnicodeString(stringLength: chars.count, unicodeString: &chars)
+        }
+        event?.post(tap: .cghidEventTap)
     }
 
     // MARK: - Key Codes method (real US QWERTY mapping)
@@ -171,69 +213,69 @@ enum PasteManager {
 
     static func typeKeyCodes(_ text: String) {
         let source = CGEventSource(stateID: .hidSystemState)
-
+        // Post exactly what `buildKeyStrokes` produces so the heavily-tested
+        // logic and the live path can never drift. The 5 ms gap is per character
+        // (a character is 2 or 4 strokes), matching the original KVM pacing.
         for char in text {
-            if let (keyCode, shift) = keyCodeMap[char] {
-                if shift {
-                    let shiftDown = CGEvent(keyboardEventSource: source,
-                                            virtualKey: shiftKeyCode, keyDown: true)
-                    shiftDown?.flags = .maskShift
-                    shiftDown?.post(tap: .cghidEventTap)
-                }
-
-                let flags: CGEventFlags = shift ? .maskShift : []
-                var chars = Array(char.utf16)
-
-                let down = CGEvent(keyboardEventSource: source,
-                                   virtualKey: keyCode, keyDown: true)
-                down?.flags = flags
-                down?.keyboardSetUnicodeString(stringLength: chars.count,
-                                               unicodeString: &chars)
-                down?.post(tap: .cghidEventTap)
-
-                let up = CGEvent(keyboardEventSource: source,
-                                 virtualKey: keyCode, keyDown: false)
-                up?.flags = flags
-                up?.keyboardSetUnicodeString(stringLength: chars.count,
-                                             unicodeString: &chars)
-                up?.post(tap: .cghidEventTap)
-
-                if shift {
-                    let shiftUp = CGEvent(keyboardEventSource: source,
-                                          virtualKey: shiftKeyCode, keyDown: false)
-                    shiftUp?.post(tap: .cghidEventTap)
-                }
-            } else {
-                var chars = Array(char.utf16)
-                let down = CGEvent(keyboardEventSource: source,
-                                   virtualKey: 0, keyDown: true)
-                down?.keyboardSetUnicodeString(stringLength: chars.count,
-                                               unicodeString: &chars)
-                down?.post(tap: .cghidEventTap)
-                let up = CGEvent(keyboardEventSource: source,
-                                 virtualKey: 0, keyDown: false)
-                up?.keyboardSetUnicodeString(stringLength: chars.count,
-                                             unicodeString: &chars)
-                up?.post(tap: .cghidEventTap)
+            for stroke in buildKeyStrokes(for: String(char)) {
+                post(stroke, source: source)
             }
-
             usleep(5000) // 5 ms between characters for KVM compatibility
         }
     }
 
     // MARK: - Clipboard (⌘V) method
 
+    static let vKeyCode: CGKeyCode = 9 // 'v' on US QWERTY
+
+    /// The ⌘V keystroke sequence (Command held via the event flag). Pure/testable.
+    static func buildClipboardPasteStrokes() -> [KeyStroke] {
+        [
+            KeyStroke(keyCode: vKeyCode, keyDown: true,  flags: .maskCommand, unicodeChars: nil),
+            KeyStroke(keyCode: vKeyCode, keyDown: false, flags: .maskCommand, unicodeChars: nil),
+        ]
+    }
+
     private static func pasteViaClipboard(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+        let pasteboard = NSPasteboard.general
+        let saved = snapshot(of: pasteboard)
+
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
 
         let source = CGEventSource(stateID: .hidSystemState)
-        let vKey: CGKeyCode = 9 // 'v' on US QWERTY
-        let down = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: true)
-        down?.flags = .maskCommand
-        down?.post(tap: .cghidEventTap)
-        let up = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: false)
-        up?.flags = .maskCommand
-        up?.post(tap: .cghidEventTap)
+        for stroke in buildClipboardPasteStrokes() {
+            post(stroke, source: source)
+        }
+
+        // Let the target app read the clipboard before we put the user's
+        // previous contents back. This runs off the main thread (see
+        // runTypingOffMainThread), so the blocking wait never freezes the UI.
+        usleep(150_000) // 150 ms
+        restore(saved, to: pasteboard)
+    }
+
+    /// Captures a detached copy of everything on `pasteboard` so it can be
+    /// restored after a ⌘V paste. Each item is rebuilt as a fresh
+    /// `NSPasteboardItem` because originals can't be re-added to a pasteboard.
+    static func snapshot(of pasteboard: NSPasteboard) -> [NSPasteboardItem] {
+        guard let items = pasteboard.pasteboardItems else { return [] }
+        return items.map { item in
+            let copy = NSPasteboardItem()
+            for type in item.types {
+                if let data = item.data(forType: type) {
+                    copy.setData(data, forType: type)
+                }
+            }
+            return copy
+        }
+    }
+
+    /// Restores a snapshot produced by `snapshot(of:)` onto `pasteboard`.
+    static func restore(_ items: [NSPasteboardItem], to pasteboard: NSPasteboard) {
+        pasteboard.clearContents()
+        if !items.isEmpty {
+            pasteboard.writeObjects(items)
+        }
     }
 }
