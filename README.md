@@ -1,5 +1,11 @@
 # OsxPaster
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+![Platform: macOS](https://img.shields.io/badge/platform-macOS-blue)
+![Built with: Swift · SwiftUI](https://img.shields.io/badge/built%20with-Swift%20%C2%B7%20SwiftUI-orange)
+![Menu bar app](https://img.shields.io/badge/menu%20bar-app-lightgrey)
+[![GitHub stars](https://img.shields.io/github/stars/MikeRzDev/OsxPaster?style=social)](https://github.com/MikeRzDev/OsxPaster/stargazers)
+
 A lightweight macOS menu bar app that **types your clipboard contents into other apps** — including places where a normal ⌘V paste doesn't work, such as web-based KVMs, remote desktops, and virtual machine consoles.
 
 ## Purpose
@@ -130,3 +136,11 @@ OsxPasterTests/          # Unit tests for keystroke logic
 build_dmg.sh             # Build + package a DMG (ad-hoc signed)
 build_dmg_sonoma.sh      # Same, targeting macOS 14+
 ```
+
+## Keywords
+
+Paste into a web KVM · paste into IPMI / BMC consoles · paste into a VM console ·
+paste into a remote desktop · clipboard to keystrokes · type clipboard contents ·
+simulate typing on macOS · `CGEvent` keystroke posting · US‑QWERTY key codes ·
+SwiftUI `MenuBarExtra` menu bar app · macOS accessibility automation ·
+paste a password into a KVM · no shared clipboard on a remote console.
