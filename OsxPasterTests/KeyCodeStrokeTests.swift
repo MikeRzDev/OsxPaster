@@ -246,7 +246,7 @@ final class KeyCodeStrokeTests: XCTestCase {
                 XCTAssertEqual(strokes[1].keyCode, expectedKeyCode,
                     "'\(ch)' stroke 1 keycode should be \(expectedKeyCode)")
                 XCTAssertTrue(strokes[1].keyDown)
-                XCTAssertEqual(strokes[1].flags, .maskShift)
+                XCTAssertEqual(strokes[1].flags, PasteManager.shiftFlags)
                 XCTAssertEqual(strokes[1].unicodeChars, Array(String(ch).utf16),
                     "'\(ch)' key-down should carry correct UTF-16")
                 XCTAssertEqual(strokes[2].keyCode, expectedKeyCode)
@@ -305,22 +305,44 @@ final class KeyCodeStrokeTests: XCTestCase {
         // 1. Shift down
         XCTAssertEqual(strokes[0].keyCode, shiftKey)
         XCTAssertTrue(strokes[0].keyDown)
-        XCTAssertEqual(strokes[0].flags, .maskShift)
+        XCTAssertEqual(strokes[0].flags, PasteManager.shiftFlags)
 
         // 2. Key down (backslash key = 42, with shift flag)
         XCTAssertEqual(strokes[1].keyCode, 42)
         XCTAssertTrue(strokes[1].keyDown)
-        XCTAssertEqual(strokes[1].flags, .maskShift)
+        XCTAssertEqual(strokes[1].flags, PasteManager.shiftFlags)
 
         // 3. Key up
         XCTAssertEqual(strokes[2].keyCode, 42)
         XCTAssertFalse(strokes[2].keyDown)
-        XCTAssertEqual(strokes[2].flags, .maskShift)
+        XCTAssertEqual(strokes[2].flags, PasteManager.shiftFlags)
 
         // 4. Shift up
         XCTAssertEqual(strokes[3].keyCode, shiftKey)
         XCTAssertFalse(strokes[3].keyDown)
         XCTAssertEqual(strokes[3].flags, [])
+    }
+
+    /// Regression: sdl-freerdp minimized its window when "M" was pasted.
+    /// SDL (SDL_cocoakeyboard.m, IsModifierKeyPressed) treats a Shift flag with
+    /// no device-side bit as BOTH Left and Right Shift held, and sdl-freerdp's
+    /// default hotkey modifier is Right Shift, so Shift+M hit "Minimize".
+    func testShiftFlagsIdentifyLeftShiftOnly() {
+        let nxDeviceLShift: UInt64 = 0x02
+        let nxDeviceRShift: UInt64 = 0x04
+        // Port of SDL's IsModifierKeyPressed.
+        func sdlPressed(_ flags: UInt64, target: UInt64, other: UInt64) -> Bool {
+            let t = flags & target != 0, o = flags & other != 0
+            let either = flags & CGEventFlags.maskShift.rawValue != 0
+            return either != (t || o) ? either : t
+        }
+        for s in PasteManager.buildKeyStrokes(for: "M") where s.keyDown {
+            let f = s.flags.rawValue
+            XCTAssertTrue(sdlPressed(f, target: nxDeviceLShift, other: nxDeviceRShift),
+                "SDL must see Left Shift held")
+            XCTAssertFalse(sdlPressed(f, target: nxDeviceRShift, other: nxDeviceLShift),
+                "SDL must NOT see Right Shift held (sdl-freerdp hotkey modifier)")
+        }
     }
 
     func testShiftedCharCarriesCorrectUnicode() {
@@ -423,9 +445,9 @@ final class KeyCodeStrokeTests: XCTestCase {
         XCTAssertEqual(strokes.count, 8)
         // Both must use keycode 47 (period) with shift
         XCTAssertEqual(strokes[1].keyCode, 47)
-        XCTAssertEqual(strokes[1].flags, .maskShift)
+        XCTAssertEqual(strokes[1].flags, PasteManager.shiftFlags)
         XCTAssertEqual(strokes[5].keyCode, 47)
-        XCTAssertEqual(strokes[5].flags, .maskShift)
+        XCTAssertEqual(strokes[5].flags, PasteManager.shiftFlags)
     }
 
     func testShellSubstitutionProducesCorrectSequence() {
@@ -435,16 +457,16 @@ final class KeyCodeStrokeTests: XCTestCase {
 
         // $ → keycode 21 (the '4' key), shift
         XCTAssertEqual(strokes[1].keyCode, 21)
-        XCTAssertEqual(strokes[1].flags, .maskShift)
+        XCTAssertEqual(strokes[1].flags, PasteManager.shiftFlags)
         XCTAssertEqual(strokes[1].unicodeChars, Array("$".utf16))
 
         // ( → keycode 25 (the '9' key), shift
         XCTAssertEqual(strokes[5].keyCode, 25)
-        XCTAssertEqual(strokes[5].flags, .maskShift)
+        XCTAssertEqual(strokes[5].flags, PasteManager.shiftFlags)
 
         // ) → keycode 29 (the '0' key), shift
         XCTAssertEqual(strokes[9].keyCode, 29)
-        XCTAssertEqual(strokes[9].flags, .maskShift)
+        XCTAssertEqual(strokes[9].flags, PasteManager.shiftFlags)
     }
 
     // MARK: - buildKeyStrokes: unmapped characters (Unicode fallback)

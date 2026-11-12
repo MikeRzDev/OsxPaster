@@ -26,10 +26,10 @@ final class ClipboardPasteTests: XCTestCase {
         XCTAssertEqual(strokes[0].keyCode, 9, "'v' on US QWERTY is keycode 9")
         XCTAssertEqual(strokes[0].keyCode, PasteManager.vKeyCode)
         XCTAssertTrue(strokes[0].keyDown)
-        XCTAssertEqual(strokes[0].flags, .maskCommand)
+        XCTAssertEqual(strokes[0].flags, PasteManager.commandFlags)
         XCTAssertNil(strokes[0].unicodeChars, "⌘V carries no Unicode payload")
         XCTAssertFalse(strokes[1].keyDown)
-        XCTAssertEqual(strokes[1].flags, .maskCommand)
+        XCTAssertEqual(strokes[1].flags, PasteManager.commandFlags)
     }
 
     // MARK: - snapshot / restore (the clobber fix)

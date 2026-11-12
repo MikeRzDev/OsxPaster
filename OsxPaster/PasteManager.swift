@@ -126,7 +126,15 @@ enum PasteManager {
 
     // MARK: - Key Codes method (real US QWERTY mapping)
 
-    static let shiftKeyCode: CGKeyCode = 56 // kVK_Shift
+    static let shiftKeyCode: CGKeyCode = 56 // kVK_Shift (left Shift)
+
+    /// Flags for a held *left* Shift: the device-independent Shift bit plus
+    /// NX_DEVICELSHIFTKEYMASK (0x02), matching what a real left Shift produces.
+    /// Without the device bit, SDL apps can't tell which Shift is down and mark
+    /// both Left and Right Shift as pressed. sdl-freerdp's default hotkey
+    /// modifier is Right Shift, so typing "M" fired its Minimize hotkey (and
+    /// "G", "R", "D" or Enter could fire grab/resizable/disconnect/fullscreen).
+    static let shiftFlags: CGEventFlags = [.maskShift, CGEventFlags(rawValue: 0x02)]
 
     /// A single event in the keystroke sequence (testable without posting).
     struct KeyStroke: Equatable {
@@ -150,9 +158,9 @@ enum PasteManager {
             if let (keyCode, shift) = keyCodeMap[char] {
                 if shift {
                     strokes.append(KeyStroke(keyCode: shiftKeyCode, keyDown: true,
-                                             flags: .maskShift, unicodeChars: nil))
+                                             flags: shiftFlags, unicodeChars: nil))
                 }
-                let flags: CGEventFlags = shift ? .maskShift : []
+                let flags: CGEventFlags = shift ? shiftFlags : []
                 let chars = Array(char.utf16)
                 strokes.append(KeyStroke(keyCode: keyCode, keyDown: true,
                                          flags: flags, unicodeChars: chars))
@@ -228,11 +236,15 @@ enum PasteManager {
 
     static let vKeyCode: CGKeyCode = 9 // 'v' on US QWERTY
 
+    /// Flags for a held *left* Command: device-independent bit plus
+    /// NX_DEVICELCMDKEYMASK (0x08), for the same reason as `shiftFlags`.
+    static let commandFlags: CGEventFlags = [.maskCommand, CGEventFlags(rawValue: 0x08)]
+
     /// The ⌘V keystroke sequence (Command held via the event flag). Pure/testable.
     static func buildClipboardPasteStrokes() -> [KeyStroke] {
         [
-            KeyStroke(keyCode: vKeyCode, keyDown: true,  flags: .maskCommand, unicodeChars: nil),
-            KeyStroke(keyCode: vKeyCode, keyDown: false, flags: .maskCommand, unicodeChars: nil),
+            KeyStroke(keyCode: vKeyCode, keyDown: true,  flags: commandFlags, unicodeChars: nil),
+            KeyStroke(keyCode: vKeyCode, keyDown: false, flags: commandFlags, unicodeChars: nil),
         ]
     }
 
